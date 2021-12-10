@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package sagawf;
+
+option go_package = "./proto;sagawf";
+
+service Sagawf {
+	rpc RunWorkflow(WorkflowRequest) returns (WorkflowResponse) {}
+}
+
+message Operation {
+	string name = 1;
+	string from = 2;
+	string to = 3;
+}
+
+message WorkflowRequest {
+	string name = 1;
+	string start = 2;
+	string end = 3;
+	string payload = 4;
+	repeated Operation operations = 5;
+}
+
+message WorkflowRef {
+	int64 id = 1;
+	string name = 2;
+	bool is_rollback = 3;
+}
+
+message State {
+	map<string, string> state = 1;
+}
+
+message WorkflowResponse {
+	WorkflowRef workflow_ref = 1;
+	map<string, State> state = 2;
+}
