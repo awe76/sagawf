@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
-	"time"
 
 	"github.com/awe76/sagawf/workflow"
 	"go-micro.dev/v4/broker"
 
+	po "github.com/awe76/sagaproc/proto"
 	pb "github.com/awe76/sagawf/proto"
+	client "go-micro.dev/v4/client"
 )
 
 type Sagawf struct {
@@ -23,7 +23,7 @@ func getWorkflowKey(id int) string {
 	return fmt.Sprintf("workflow:definition:%d", id)
 }
 
-func NewSagawf() (*Sagawf, error) {
+func NewSagawf(c client.Client) (*Sagawf, error) {
 	cache := workflow.NewCache()
 	producer := workflow.NewProducer()
 	err := producer.Init()
@@ -44,32 +44,43 @@ func NewSagawf() (*Sagawf, error) {
 		handler:  handler,
 	}
 
+	proc := po.NewSagaprocService("sagaproc", c)
+
 	_, err = broker.Subscribe(workflow.WORKFLOW_OPERATION_START, func(p broker.Event) error {
 		var op workflow.OperationPayload
 		err := json.Unmarshal(p.Message().Body, &op)
+
 		if err != nil {
 			return err
 		}
 
-		if op.IsRollback {
-			fmt.Printf("%s operation rollback is started\n", op.Operation.Name)
-		} else {
-			fmt.Printf("%s operation is started\n", op.Operation.Name)
+		ctx := context.Background()
+		o := op.Operation
+
+		req := po.OperationPayload{
+			Id:         int64(op.ID),
+			IsRollback: op.IsRollback,
+			Name:       op.Name,
+			Operation: &po.Operation{
+				From: o.From,
+				To:   o.To,
+				Name: o.Name,
+			},
 		}
 
-		rand.Seed(time.Now().UnixNano())
+		resp, err := proc.HandleOperation(ctx, &req)
 
-		pause := rand.Intn(100)
-		// sleep for some random time
-		time.Sleep(time.Duration(pause) * time.Millisecond)
+		if err != nil {
+			return err
+		}
 
-		op.Payload = rand.Float32()
+		op.Payload = resp.Payload
 
 		// randomly complete or fault the operation
-		if op.IsRollback || rand.Float32() < 0.8 {
-			return producer.SendMessage(workflow.WORKFLOW_OPERATION_COMPLETED, op)
-		} else {
+		if resp.IsFailed {
 			return producer.SendMessage(workflow.WORKFLOW_OPERATION_FAILED, op)
+		} else {
+			return producer.SendMessage(workflow.WORKFLOW_OPERATION_COMPLETED, op)
 		}
 	})
 
@@ -97,7 +108,6 @@ func NewSagawf() (*Sagawf, error) {
 		}
 
 		return proc.OnComplete(w, op)
-		return nil
 	})
 
 	if err != nil {

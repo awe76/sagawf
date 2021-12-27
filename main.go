@@ -21,7 +21,7 @@ func main() {
 	)
 	srv.Init()
 
-	handler, err := handler.NewSagawf()
+	handler, err := handler.NewSagawf(srv.Client())
 
 	if err != nil {
 		log.Fatal(err)
